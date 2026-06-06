@@ -39,8 +39,16 @@ export function SchedulePreview({ selection }: SchedulePreviewProps) {
 
     useEffect(() => {
         setSchedules([]);
+        setTripUpdates(undefined);
+        setLiveUpdates(false);
 
-        fetch(`${SchedulesAPIBase}/${id}`).then(r => r.json()).then((data: any) => {
+        let cancelled = false
+        fetch(`${SchedulesAPIBase}/${id}`)
+            .then(r => r.json()).then((data: any) => {
+            
+            if (cancelled) {
+                return;
+            }
             
             import.meta.env.DEV && 
                 console.log('Schedule response', data);
@@ -59,6 +67,8 @@ export function SchedulePreview({ selection }: SchedulePreviewProps) {
             setLiveUpdates(liveUpdates);
         });
 
+        return () => {cancelled = true};
+
     }, [id]);
 
     useEffect(() => {
@@ -66,16 +76,50 @@ export function SchedulePreview({ selection }: SchedulePreviewProps) {
             return;
         }
 
-        const getUpdates = () => {
-            fetch(`${RTUpdatesAPIBase}/${id}`).then(r => r.json()).then(tripUpdates => {
-                setTripUpdates(tripUpdates);
-            });
+        let cancelled = false;
+        let inFlight = false;
+        let errCounter = 0;
+
+        const getUpdates = async () => {
+            // skip overlapping ticks
+            if (inFlight) return;
+            inFlight = true;
+            
+            try {
+                const response = await fetch(`${RTUpdatesAPIBase}/${id}`);
+                // Effect superseded - drop stale result
+                if (cancelled) return;
+
+                if (response.status === 200) {
+                    const data = await response.json();
+                    if (cancelled) return;
+                    if (data) {
+                        setTripUpdates(data);
+                    }
+                    // Backend is OK, reset counter
+                    errCounter = 0;
+                }
+                else if (++errCounter >= 3) { 
+                    clearInterval(rt);
+                }
+            }
+            catch {
+                if (!cancelled && ++errCounter >= 3) {
+                    clearInterval(rt);
+                }
+            }
+            finally {
+                inFlight = false;
+            }
         }
 
         const rt = setInterval(getUpdates, 5000);
         getUpdates();
 
-        return () => clearInterval(rt);
+        return () => {
+            cancelled = true;
+            clearInterval(rt);
+        };
 
     }, [id, liveUpdates]);
 
