@@ -3,68 +3,34 @@ import { MapContext } from "../app";
 import { routesStyling } from "./routes-styling";
 import type { GeoJSONSource } from "maplibre-gl";
 
-export type RouteDisplayEntry = {
-    stopLonLat: number[];
-    routes: { [k: string]: { nextStopLonLat: number[], prevStopLonLat: number[] } };
+export type FullRouteDisplayEntry = {
+    routeKey: string;
+    coordinates: [number, number][];
 }
 
 type RoutesMapProps = {
-    entries: RouteDisplayEntry[];
+    fullRoutes?: FullRouteDisplayEntry[];
 }
-export function RoutesMap({ entries }: RoutesMapProps) {
-
-    if (import.meta.env.DEV) {
-        console.log('Render routes', entries);
-    }
+export function RoutesMap({ fullRoutes = [] }: RoutesMapProps) {
 
     const map = useContext(MapContext)?.map;
     const layerControls = useContext(MapContext)?.layerControls;
 
     const [mapStylesReady, setMapStylesReady] = useState<boolean>(!!map?.getSource('routes'));
 
-    const features = entries.map(({ stopLonLat, routes }) => {
-        return Object.entries(routes || {}).map(([routeKey, route]) => {
-            const { nextStopLonLat, prevStopLonLat } = route;
+    const fullRouteFeatures = fullRoutes.map(({ routeKey, coordinates }) => ({
+        type: 'Feature',
+        geometry: {
+            type: 'LineString',
+            coordinates
+        },
+        properties: {
+            name: routeKey,
+            color: 'green'
+        }
+    }));
 
-            const features = [];
-
-            if (nextStopLonLat) {
-                features.push({
-                    type: 'Feature',
-                    geometry: {
-                        type: 'LineString',
-                        coordinates: [
-                            [...stopLonLat],
-                            [...nextStopLonLat]
-                        ]
-                    },
-                    properties: {
-                        name: routeKey,
-                        color: 'red'
-                    }
-                });
-            }
-
-            if (prevStopLonLat) {
-                features.push({
-                    type: 'Feature',
-                    geometry: {
-                        type: 'LineString',
-                        coordinates: [
-                            [...prevStopLonLat],
-                            [...stopLonLat],
-                        ]
-                    },
-                    properties: {
-                        name: routeKey,
-                        color: 'blue'
-                    }
-                });
-            }
-
-            return features;
-        });
-    }).flat();
+    const allFeatures = fullRouteFeatures;
 
     useEffect(() => {
         if (!map) return;
@@ -103,7 +69,7 @@ export function RoutesMap({ entries }: RoutesMapProps) {
             return;
         }
 
-        if (!map || !features) {
+        if (!map || !allFeatures) {
             import.meta.env.DEV &&
                 console.warn('Routes: map or route features is not ready');
 
@@ -114,7 +80,7 @@ export function RoutesMap({ entries }: RoutesMapProps) {
             (map.getSource('routes') as GeoJSONSource).setData({
                 type: 'FeatureCollection',
                 // @ts-ignore
-                features: features.flat()
+                features: allFeatures
             });
         }
         else {
@@ -130,7 +96,7 @@ export function RoutesMap({ entries }: RoutesMapProps) {
             }
         };
 
-    }, [map, features, mapStylesReady]);
+    }, [map, allFeatures, mapStylesReady]);
 
     return <></>
 }
